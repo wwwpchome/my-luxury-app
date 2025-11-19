@@ -1,5 +1,5 @@
-import { format, startOfDay, addDays } from "date-fns";
-import { supabase } from "@/lib/supabase";
+import { format } from "date-fns";
+import { createClient } from "@/lib/supabase/client";
 
 export type Story = {
   id: string;
@@ -8,16 +8,28 @@ export type Story = {
   story_hour: number;
   mood_color: string | null;
   image_path: string | null;
+  user_id: string;
   created_at?: string;
 };
 
 export async function getStoriesForDate(date: Date): Promise<Story[]> {
+  const supabase = createClient();
   const dateString = format(date, "yyyy-MM-dd");
+
+  // Get current user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("User not authenticated");
+  }
 
   const { data, error } = await supabase
     .from("stories")
     .select("*")
     .eq("story_date", dateString)
+    .eq("user_id", user.id)
     .order("story_hour", { ascending: true });
 
   if (error) {
@@ -34,9 +46,25 @@ export async function createStory(story: {
   mood_color: string | null;
   image_path?: string | null;
 }): Promise<Story> {
+  const supabase = createClient();
+
+  // Get current user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("User not authenticated");
+  }
+
   const { data, error } = await supabase
     .from("stories")
-    .insert([story])
+    .insert([
+      {
+        ...story,
+        user_id: user.id,
+      },
+    ])
     .select()
     .single();
 
@@ -48,6 +76,7 @@ export async function createStory(story: {
 }
 
 export async function uploadImage(file: File, storyId: string): Promise<string> {
+  const supabase = createClient();
   const timestamp = Date.now();
   const fileExt = file.name.split(".").pop();
   const fileName = `${storyId}-${timestamp}.${fileExt}`;

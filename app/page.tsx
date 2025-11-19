@@ -1,16 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Timeline } from "@/components/shared/timeline";
 import { StorySheet } from "@/components/shared/story-sheet";
 import { getStoriesForDate, type Story } from "@/lib/stories";
-import { Settings, User } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Settings, User, LogOut } from "lucide-react";
 import { format } from "date-fns";
 import useSWR from "swr";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
@@ -41,6 +47,52 @@ export default function Home() {
     setRefreshKey((prev) => prev + 1);
     mutate();
   };
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.push("/login");
+      } else {
+        setUser(session.user);
+      }
+      setIsLoadingUser(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.push("/login");
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
+
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
+
+  if (isLoadingUser) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect to login
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -75,16 +127,21 @@ export default function Home() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground truncate">
-                User Name
+                {user.email?.split("@")[0] || "User"}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                user@example.com
+                {user.email}
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" className="w-full">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleSignOut}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
           </Button>
         </div>
       </aside>

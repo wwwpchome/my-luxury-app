@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createStory, uploadImage } from "@/lib/stories";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import { format } from "date-fns";
 
 interface StorySheetProps {
@@ -149,6 +149,7 @@ export function StorySheet({
           imagePath = await uploadImage(selectedFile, newStory.id);
           
           // Update story with image path
+          const supabase = createClient();
           const { error: updateError } = await supabase
             .from("stories")
             .update({ image_path: imagePath })
@@ -159,6 +160,7 @@ export function StorySheet({
           }
         } catch (uploadError) {
           // If upload fails, delete the story
+          const supabase = createClient();
           await supabase.from("stories").delete().eq("id", newStory.id);
           throw uploadError;
         } finally {
