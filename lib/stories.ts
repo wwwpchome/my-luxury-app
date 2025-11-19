@@ -51,7 +51,21 @@ export async function uploadImage(file: File, storyId: string): Promise<string> 
   const timestamp = Date.now();
   const fileExt = file.name.split(".").pop();
   const fileName = `${storyId}-${timestamp}.${fileExt}`;
-  const filePath = `story-images/${fileName}`;
+  const filePath = fileName; // Don't include bucket name in path
+
+  // First, check if bucket exists by trying to list it
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+  
+  if (listError) {
+    throw new Error(`Failed to access storage: ${listError.message}. Please check your Supabase configuration.`);
+  }
+
+  const bucketExists = buckets?.some(bucket => bucket.name === "story-images");
+  if (!bucketExists) {
+    throw new Error(
+      'Storage bucket "story-images" does not exist. Please create it in Supabase Dashboard → Storage and set it as Public.'
+    );
+  }
 
   const { error: uploadError } = await supabase.storage
     .from("story-images")
@@ -61,6 +75,11 @@ export async function uploadImage(file: File, storyId: string): Promise<string> 
     });
 
   if (uploadError) {
+    if (uploadError.message.includes("row-level security")) {
+      throw new Error(
+        'Storage RLS policy error. Please execute the SQL in QUICK_FIX_STORAGE.sql in Supabase Dashboard → SQL Editor.'
+      );
+    }
     throw new Error(`Failed to upload image: ${uploadError.message}`);
   }
 
