@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Image from "next/image";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { Story } from "@/lib/stories";
@@ -72,13 +71,26 @@ export function Timeline({ stories, onTimeClick }: TimelineProps) {
                       >
                         <Card className="backdrop-blur-md bg-white/80 border-border/50 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
                           {story.image_path && (
-                            <div className="w-full h-48 overflow-hidden relative">
-                              <Image
+                            <div className="w-full h-48 overflow-hidden relative bg-muted rounded-t-lg">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
                                 src={story.image_path}
                                 alt="Story image"
-                                fill
-                                className="object-cover"
-                                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                crossOrigin="anonymous"
+                                onError={(e) => {
+                                  console.error("Image load error:", story.image_path);
+                                  // Show error placeholder
+                                  e.currentTarget.style.display = "none";
+                                  const parent = e.currentTarget.parentElement;
+                                  if (parent) {
+                                    parent.innerHTML = '<div class="w-full h-full flex items-center justify-center text-muted-foreground text-sm">Image failed to load</div>';
+                                  }
+                                }}
+                                onLoad={() => {
+                                  console.log("Image loaded successfully:", story.image_path);
+                                }}
                               />
                             </div>
                           )}
