@@ -12,9 +12,10 @@ const formatTime = (hour: number) => {
 interface TimelineProps {
   stories: Story[];
   onTimeClick?: (hour: number) => void;
+  showUserInfo?: boolean;
 }
 
-export function Timeline({ stories, onTimeClick }: TimelineProps) {
+export function Timeline({ stories, onTimeClick, showUserInfo = false }: TimelineProps) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   const getStoriesForHour = (hour: number) => {
@@ -106,6 +107,11 @@ export function Timeline({ stories, onTimeClick }: TimelineProps) {
                                     story.mood_color
                                   )}
                                 />
+                              )}
+                              {showUserInfo && story.user_id && (
+                                <span className="text-xs text-muted-foreground ml-auto">
+                                  {story.user_id.slice(0, 8)}...
+                                </span>
                               )}
                             </div>
                             <p className="text-sm text-foreground line-clamp-3 whitespace-pre-wrap">

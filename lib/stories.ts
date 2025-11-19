@@ -12,24 +12,52 @@ export type Story = {
   created_at?: string;
 };
 
-export async function getStoriesForDate(date: Date): Promise<Story[]> {
+export async function getStoriesForDate(date: Date, userId?: string | null): Promise<Story[]> {
   const supabase = createClient();
   const dateString = format(date, "yyyy-MM-dd");
 
-  // Get current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Get current user if userId not provided
+  let currentUserId = userId;
+  if (!currentUserId) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    throw new Error("User not authenticated");
+    if (!user) {
+      throw new Error("User not authenticated");
+    }
+    currentUserId = user.id;
   }
+
+  const query = supabase
+    .from("stories")
+    .select("*")
+    .eq("story_date", dateString)
+    .order("story_hour", { ascending: true });
+
+  // If userId is provided, filter by user; otherwise get all stories (plaza mode)
+  if (currentUserId) {
+    query.eq("user_id", currentUserId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to load stories: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+// Get all public stories for plaza mode
+export async function getAllStoriesForDate(date: Date): Promise<Story[]> {
+  const supabase = createClient();
+  const dateString = format(date, "yyyy-MM-dd");
 
   const { data, error } = await supabase
     .from("stories")
     .select("*")
     .eq("story_date", dateString)
-    .eq("user_id", user.id)
     .order("story_hour", { ascending: true });
 
   if (error) {
@@ -37,6 +65,34 @@ export async function getStoriesForDate(date: Date): Promise<Story[]> {
   }
 
   return data ?? [];
+}
+
+// Get user info for story display
+export async function getUserInfo(userId: string): Promise<{ email: string | null; avatar_url: string | null }> {
+  const supabase = createClient();
+  
+  const { data, error } = await supabase
+    .from("users")
+    .select("email, avatar_url")
+    .eq("id", userId)
+    .single();
+
+  if (error) {
+    // If users table doesn't exist, try to get from auth.users
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && user.id === userId) {
+      return {
+        email: user.email || null,
+        avatar_url: user.user_metadata?.avatar_url || null,
+      };
+    }
+    return { email: null, avatar_url: null };
+  }
+
+  return {
+    email: data?.email || null,
+    avatar_url: data?.avatar_url || null,
+  };
 }
 
 export async function createStory(story: {

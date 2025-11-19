@@ -5,22 +5,19 @@ import { useRouter } from "next/navigation";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Timeline } from "@/components/shared/timeline";
-import { StorySheet } from "@/components/shared/story-sheet";
-import { getStoriesForDate, type Story } from "@/lib/stories";
+import { getAllStoriesForDate, type Story } from "@/lib/stories";
 import { createClient } from "@/lib/supabase/client";
-import { Settings, User, LogOut, Users } from "lucide-react";
-import Link from "next/link";
+import { User, LogOut, Home, Users } from "lucide-react";
 import { format } from "date-fns";
 import useSWR from "swr";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import Link from "next/link";
 
-export default function Home() {
+export default function PlazaPage() {
   const router = useRouter();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const dateKey = format(selectedDate, "yyyy-MM-dd");
@@ -31,23 +28,12 @@ export default function Home() {
     isLoading,
     mutate,
   } = useSWR<Story[]>(
-    ["stories", dateKey, refreshKey],
-    () => getStoriesForDate(selectedDate),
+    ["plaza-stories", dateKey, refreshKey],
+    () => getAllStoriesForDate(selectedDate),
     {
       revalidateOnFocus: false,
     }
   );
-
-  const handleTimeClick = (hour: number) => {
-    setSelectedHour(hour);
-    setSheetOpen(true);
-  };
-
-  const handleStoryCreated = () => {
-    // Trigger refresh by updating the refresh key
-    setRefreshKey((prev) => prev + 1);
-    mutate();
-  };
 
   useEffect(() => {
     const supabase = createClient();
@@ -104,20 +90,21 @@ export default function Home() {
           <h1 className="font-display text-2xl font-bold text-foreground">
             Chronos
           </h1>
+          <p className="text-xs text-muted-foreground mt-1">Plaza Mode</p>
         </div>
 
         {/* Navigation */}
         <div className="p-4 border-b border-border">
-          <Button variant="default" size="sm" className="w-full mb-2" disabled>
-            <User className="h-4 w-4 mr-2" />
-            My Stories
-          </Button>
-          <Link href="/plaza">
-            <Button variant="outline" size="sm" className="w-full">
-              <Users className="h-4 w-4 mr-2" />
-              Plaza
+          <Link href="/">
+            <Button variant="outline" size="sm" className="w-full mb-2">
+              <Home className="h-4 w-4 mr-2" />
+              My Stories
             </Button>
           </Link>
+          <Button variant="default" size="sm" className="w-full" disabled>
+            <Users className="h-4 w-4 mr-2" />
+            Plaza
+          </Button>
         </div>
 
         {/* Calendar */}
@@ -167,7 +154,7 @@ export default function Home() {
           {/* Header */}
           <div className="mb-8">
             <h2 className="font-display text-3xl font-bold text-foreground mb-2">
-              {format(selectedDate, "EEEE, MMMM d, yyyy")}
+              Plaza - {format(selectedDate, "EEEE, MMMM d, yyyy")}
             </h2>
             <p className="text-sm text-muted-foreground">
               {isLoading
@@ -175,7 +162,7 @@ export default function Home() {
                 : error
                 ? "Error loading stories"
                 : stories
-                ? `${stories.length} ${stories.length === 1 ? "story" : "stories"} today`
+                ? `${stories.length} ${stories.length === 1 ? "story" : "stories"} from everyone`
                 : "No stories today"}
             </p>
           </div>
@@ -190,20 +177,11 @@ export default function Home() {
           ) : (
             <Timeline
               stories={stories ?? []}
-              onTimeClick={handleTimeClick}
+              showUserInfo={true}
             />
           )}
         </div>
       </main>
-
-      {/* Story Sheet */}
-      <StorySheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        selectedHour={selectedHour}
-        selectedDate={selectedDate}
-        onStoryCreated={handleStoryCreated}
-      />
     </div>
   );
 }

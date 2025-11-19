@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { Github, Chrome } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -47,6 +48,25 @@ export default function LoginPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSocialLogin = async (provider: "google" | "github") => {
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (signInError) throw signInError;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
       setIsLoading(false);
     }
   };
@@ -123,6 +143,40 @@ export default function LoginPage() {
                 disabled={isLoading}
               >
                 {isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
+              </Button>
+            </div>
+
+            {/* Social Login Divider */}
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-muted-foreground">Or continue with</span>
+              </div>
+            </div>
+
+            {/* Social Login Buttons */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11"
+                onClick={() => handleSocialLogin("google")}
+                disabled={isLoading}
+              >
+                <Chrome className="h-4 w-4 mr-2" />
+                Google
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11"
+                onClick={() => handleSocialLogin("github")}
+                disabled={isLoading}
+              >
+                <Github className="h-4 w-4 mr-2" />
+                GitHub
               </Button>
             </div>
           </form>
