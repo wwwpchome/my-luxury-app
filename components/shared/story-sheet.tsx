@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
-import Image from "next/image";
+import { useState, useRef, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -12,16 +11,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createStory, uploadImage } from "@/lib/stories";
+import { createStory, updateStory, uploadImage, type Story } from "@/lib/stories";
 import { createClient } from "@/lib/supabase/client";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface StorySheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedHour: number | null;
   selectedDate: Date;
+  editingStory?: Story | null;
   onStoryCreated?: () => void;
+  onStoryUpdated?: () => void;
 }
 
 const moodColors = [
@@ -33,21 +35,53 @@ const moodColors = [
   { name: "Warm", color: "bg-pink-400" },
 ];
 
+const privacyOptions = [
+  { value: true, label: "所有人可见", icon: "🌍" },
+  { value: false, label: "仅自己可见", icon: "🔒" },
+];
+
 export function StorySheet({
   open,
   onOpenChange,
   selectedHour,
   selectedDate,
+  editingStory,
   onStoryCreated,
+  onStoryUpdated,
 }: StorySheetProps) {
   const [story, setStory] = useState("");
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImagePath, setExistingImagePath] = useState<string | null>(null);
+  const [isPublic, setIsPublic] = useState<boolean>(true); // 默认公开
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPolishing, setIsPolishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const isEditMode = !!editingStory;
+
+  // Load story data when editing
+  useEffect(() => {
+    if (editingStory && open) {
+      setStory(editingStory.content);
+      setSelectedMood(editingStory.mood_color);
+      setExistingImagePath(editingStory.image_path);
+      setIsPublic(editingStory.is_public ?? true);
+      setImagePreview(null);
+      setSelectedFile(null);
+    } else if (!editingStory && open) {
+      // Reset form for new story
+      setStory("");
+      setSelectedMood(null);
+      setSelectedFile(null);
+      setImagePreview(null);
+      setExistingImagePath(null);
+      setIsPublic(true); // 默认公开
+    }
+  }, [editingStory, open]);
 
   const formatTime = (hour: number) => {
     return `${String(hour).padStart(2, "0")}:00`;
@@ -73,6 +107,7 @@ export function StorySheet({
   const handleRemoveImage = () => {
     setSelectedFile(null);
     setImagePreview(null);
+    setExistingImagePath(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -119,11 +154,15 @@ export function StorySheet({
 
   const handlePublish = async () => {
     if (!story.trim()) {
-      alert("Please write your story before publishing.");
+      toast({
+        title: "Error",
+        description: "Please write your story before publishing.",
+        variant: "destructive",
+      });
       return;
     }
 
-    if (selectedHour === null) {
+    if (selectedHour === null && !isEditMode) {
       return;
     }
 
@@ -131,68 +170,132 @@ export function StorySheet({
     let imagePath: string | null = null;
 
     try {
-      const storyDate = format(selectedDate, "yyyy-MM-dd");
-      
-      // First, create the story to get an ID
-      const newStory = await createStory({
-        content: story.trim(),
-        story_date: storyDate,
-        story_hour: selectedHour,
-        mood_color: selectedMood,
-        image_path: null, // Will update after upload
-      });
+      if (isEditMode && editingStory) {
+        // Update existing story
+        const updates: {
+          content: string;
+          mood_color: string | null;
+          image_path?: string | null;
+          is_public?: boolean;
+        } = {
+          content: story.trim(),
+          mood_color: selectedMood,
+          is_public: isPublic,
+        };
 
-      // Upload image if selected
-      if (selectedFile) {
-        setIsUploading(true);
-        try {
-          imagePath = await uploadImage(selectedFile, newStory.id);
-          
-          // Update story with image path
-          const supabase = createClient();
-          const { error: updateError } = await supabase
-            .from("stories")
-            .update({ image_path: imagePath })
-            .eq("id", newStory.id);
-
-          if (updateError) {
-            throw new Error(`Failed to update story with image: ${updateError.message}`);
+        // Upload new image if selected
+        if (selectedFile) {
+          setIsUploading(true);
+          try {
+            imagePath = await uploadImage(selectedFile, editingStory.id);
+            updates.image_path = imagePath;
+          } catch (uploadError) {
+            throw uploadError;
+          } finally {
+            setIsUploading(false);
           }
-        } catch (uploadError) {
-          // If upload fails, delete the story
-          const supabase = createClient();
-          await supabase.from("stories").delete().eq("id", newStory.id);
-          throw uploadError;
-        } finally {
-          setIsUploading(false);
+        } else {
+          // Keep existing image path
+          updates.image_path = existingImagePath;
         }
-      }
 
-      // Reset form
-      setStory("");
-      setSelectedMood(null);
-      setSelectedFile(null);
-      setImagePreview(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      onOpenChange(false);
-      
-      // Refresh timeline
-      if (onStoryCreated) {
-        onStoryCreated();
+        await updateStory(editingStory.id, updates);
+        
+        toast({
+          title: "Story updated",
+          description: "Your story has been updated successfully.",
+        });
+
+        // Reset form
+        setStory("");
+        setSelectedMood(null);
+        setSelectedFile(null);
+        setImagePreview(null);
+        setExistingImagePath(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        onOpenChange(false);
+
+        // Refresh timeline
+        if (onStoryUpdated) {
+          onStoryUpdated();
+        }
+      } else {
+        // Create new story
+        const storyDate = format(selectedDate, "yyyy-MM-dd");
+
+        // First, create the story to get an ID
+        const newStory = await createStory({
+          content: story.trim(),
+          story_date: storyDate,
+          story_hour: selectedHour!,
+          mood_color: selectedMood,
+          image_path: null, // Will update after upload
+          is_public: isPublic,
+        });
+
+        // Upload image if selected
+        if (selectedFile) {
+          setIsUploading(true);
+          try {
+            imagePath = await uploadImage(selectedFile, newStory.id);
+
+            // Update story with image path
+            const supabase = createClient();
+            const { error: updateError } = await supabase
+              .from("stories")
+              .update({ image_path: imagePath })
+              .eq("id", newStory.id);
+
+            if (updateError) {
+              throw new Error(`Failed to update story with image: ${updateError.message}`);
+            }
+          } catch (uploadError) {
+            // If upload fails, delete the story
+            const supabase = createClient();
+            await supabase.from("stories").delete().eq("id", newStory.id);
+            throw uploadError;
+          } finally {
+            setIsUploading(false);
+          }
+        }
+
+        toast({
+          title: "Story published",
+          description: "Your story has been published successfully.",
+        });
+
+        // Reset form
+        setStory("");
+        setSelectedMood(null);
+        setSelectedFile(null);
+        setImagePreview(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        onOpenChange(false);
+
+        // Refresh timeline
+        if (onStoryCreated) {
+          onStoryCreated();
+        }
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to save story";
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
       setIsUploading(false);
     }
   };
 
-  if (selectedHour === null) return null;
+  if (selectedHour === null && !isEditMode) return null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -201,7 +304,9 @@ export function StorySheet({
           {/* Header */}
           <SheetHeader className="px-12 pt-16 pb-12 border-b border-border">
             <SheetTitle className="font-display text-4xl font-bold text-left">
-              {formatTime(selectedHour)} - What happened?
+              {isEditMode
+                ? "Edit Story"
+                : `${formatTime(selectedHour!)} - What happened?`}
             </SheetTitle>
           </SheetHeader>
 
@@ -245,6 +350,23 @@ export function StorySheet({
                   <img
                     src={imagePreview}
                     alt="Preview"
+                    className="w-full h-64 object-cover rounded-lg"
+                  />
+                  <button
+                    onClick={handleRemoveImage}
+                    disabled={isSubmitting}
+                    className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors disabled:opacity-50"
+                    aria-label="Remove image"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : existingImagePath ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={existingImagePath}
+                    alt="Story image"
                     className="w-full h-64 object-cover rounded-lg"
                   />
                   <button
@@ -303,6 +425,33 @@ export function StorySheet({
                 ))}
               </div>
             </div>
+
+            {/* Privacy Settings */}
+            <div className="space-y-6">
+              <p className="text-base font-medium text-foreground">
+                隐私设置
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {privacyOptions.map((option) => (
+                  <button
+                    key={String(option.value)}
+                    onClick={() => setIsPublic(option.value)}
+                    disabled={isSubmitting || isPolishing}
+                    className={cn(
+                      "p-4 rounded-lg border-2 transition-all hover:border-foreground disabled:opacity-50 disabled:cursor-not-allowed text-left",
+                      isPublic === option.value
+                        ? "border-foreground bg-foreground/5"
+                        : "border-border"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{option.icon}</span>
+                      <span className="text-sm font-medium">{option.label}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Footer */}
@@ -320,10 +469,10 @@ export function StorySheet({
               ) : isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Publishing...
+                  {isEditMode ? "Updating..." : "Publishing..."}
                 </>
               ) : (
-                "Publish Moment"
+                isEditMode ? "Update Story" : "Publish Moment"
               )}
             </Button>
           </div>

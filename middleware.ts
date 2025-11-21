@@ -1,51 +1,44 @@
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@/lib/supabase/server";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+  try {
+    const supabase = await createClient();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({
-            request,
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const pathname = request.nextUrl.pathname;
+
+    // Public routes that don't require authentication
+    const publicRoutes = ["/login", "/auth/callback", "/test-db"];
+    const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route));
+
+    // API routes - let them through
+    if (pathname.startsWith("/api")) {
+      return NextResponse.next();
     }
-  );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    // Protect routes - redirect to login if not authenticated
+    if (!isPublicRoute && !user) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
 
-  // Protect home page - redirect to login if not authenticated
-  if (request.nextUrl.pathname === "/" && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Redirect authenticated users away from login page
+    if (pathname === "/login" && user) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    return NextResponse.next();
+  } catch (error) {
+    // If there's an error (e.g., missing env variables), allow the request through
+    // and let the page handle the error
+    console.error("Middleware error:", error);
+    return NextResponse.next();
   }
-
-  // Redirect authenticated users away from login page
-  if (request.nextUrl.pathname === "/login" && user) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
-  return response;
 }
 
 export const config = {
@@ -56,8 +49,11 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
+     * - api routes (handled separately)
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
+
+
 

@@ -25,3 +25,5 @@ CREATE POLICY "Users can view all stories" ON stories
 -- FROM stories s
 -- LEFT JOIN auth.users u ON s.user_id = u.id;
 
+
+

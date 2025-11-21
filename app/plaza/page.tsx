@@ -178,6 +178,7 @@ export default function PlazaPage() {
             <Timeline
               stories={stories ?? []}
               showUserInfo={true}
+              currentUserId={user?.id}
             />
           )}
         </div>
@@ -185,4 +186,6 @@ export default function PlazaPage() {
     </div>
   );
 }
+
+
 

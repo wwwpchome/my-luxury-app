@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Timeline } from "@/components/shared/timeline";
 import { StorySheet } from "@/components/shared/story-sheet";
-import { getStoriesForDate, type Story } from "@/lib/stories";
+import { getStoriesForDate, getStoryDates, type Story } from "@/lib/stories";
 import { createClient } from "@/lib/supabase/client";
 import { Settings, User, LogOut, Users } from "lucide-react";
 import Link from "next/link";
@@ -21,7 +21,9 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
+  const [editingStory, setEditingStory] = useState<Story | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [storyDates, setStoryDates] = useState<Date[]>([]);
 
   const dateKey = format(selectedDate, "yyyy-MM-dd");
   
@@ -40,6 +42,7 @@ export default function Home() {
 
   const handleTimeClick = (hour: number) => {
     setSelectedHour(hour);
+    setEditingStory(null); // Clear editing when clicking on time
     setSheetOpen(true);
   };
 
@@ -47,7 +50,33 @@ export default function Home() {
     // Trigger refresh by updating the refresh key
     setRefreshKey((prev) => prev + 1);
     mutate();
+    // Refresh story dates for calendar highlighting
+    if (user) {
+      getStoryDates(user.id).then(setStoryDates).catch(console.error);
+    }
   };
+
+  const handleStoryUpdated = () => {
+    handleStoryCreated();
+  };
+
+  const handleStoryEdit = (story: Story) => {
+    setEditingStory(story);
+    setSheetOpen(true);
+  };
+
+  const handleStoryDelete = () => {
+    handleStoryCreated();
+  };
+
+  // Load story dates for calendar highlighting
+  useEffect(() => {
+    if (user) {
+      getStoryDates(user.id)
+        .then(setStoryDates)
+        .catch(console.error);
+    }
+  }, [user, refreshKey]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -125,8 +154,19 @@ export default function Home() {
           <Calendar
             mode="single"
             selected={selectedDate}
-            onSelect={(date) => date && setSelectedDate(date)}
+            onSelect={(date) => {
+              if (date) {
+                setSelectedDate(date);
+                setEditingStory(null); // Clear editing when selecting new date
+              }
+            }}
             className="w-full"
+            modifiers={{
+              hasStory: storyDates,
+            }}
+            modifiersClassNames={{
+              hasStory: "bg-primary/10 border-primary/30 border-2",
+            }}
             classNames={{
               month_caption: "text-foreground",
               weekday: "text-muted-foreground",
@@ -191,6 +231,9 @@ export default function Home() {
             <Timeline
               stories={stories ?? []}
               onTimeClick={handleTimeClick}
+              onStoryEdit={handleStoryEdit}
+              onStoryDelete={handleStoryDelete}
+              currentUserId={user?.id}
             />
           )}
         </div>
@@ -199,10 +242,18 @@ export default function Home() {
       {/* Story Sheet */}
       <StorySheet
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={(open) => {
+          setSheetOpen(open);
+          if (!open) {
+            setEditingStory(null);
+            setSelectedHour(null);
+          }
+        }}
         selectedHour={selectedHour}
         selectedDate={selectedDate}
+        editingStory={editingStory}
         onStoryCreated={handleStoryCreated}
+        onStoryUpdated={handleStoryUpdated}
       />
     </div>
   );
